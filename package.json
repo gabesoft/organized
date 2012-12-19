@@ -1,13 +1,21 @@
 {
-  "name": "organized",
-  "version": "0.0.1",
-  "private": true,
-  "scripts": {
-    "start": "node app"
-  },
-  "dependencies": {
-    "express": "3.0.4",
-    "ejs": "*",
-    "stylus": "*"
-  }
+    "name": "organized",
+    "version": "0.0.1",
+    "private": true,
+    "scripts": {
+        "start": "node app"
+    },
+    "dependencies": {
+        "express": "3.0.4",
+        "ws": "git+https://github.com/gabesoft/ws.git",
+        "ejs": "0.8.3",
+        "stylus": "0.31.0",
+        "eventemitter2": "0.4.11",
+        "underscore": "1.4.3",
+        "mongoose": "3.5.2"
+    },
+    "devDependencies": {
+        "should": "1.2.1",
+        "mocha": "1.7.4"
+    }
 }
