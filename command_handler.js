@@ -45,7 +45,7 @@ CommandHandler.prototype.initialize = function(ws) {
     ws.on('connection', function(socket) {
         var key = Date.now() + '';
 
-        self.sockets[key] = socket; // TODO: use sockets
+        self.sockets[key] = socket;
 
         console.log('ws connected');
 
