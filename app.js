@@ -66,7 +66,16 @@ server.listen(app.get('port'), function(){
       , projectSchema = mongoose.Schema({ title: String, description: String })
       , Project       = mongoose.model('Project', projectSchema)
       , db            = null
-      , editing       = {};
+      , editList      = {}
+      , editing       = function(id) {
+            var res = false;
+            Object
+               .keys(editList)
+               .forEach(function(k) {
+                    res = res | editList[k][id];
+                });
+            return res;
+        };
 
     mongoose.connect('mongodb://localhost/organized');
     db = mongoose.connection;
@@ -81,7 +90,7 @@ server.listen(app.get('port'), function(){
 
     handler.initialize(ws);
 
-    handler.on('get', function(cmd, data) {
+    handler.on('get', function(cmd, data, user, key) {
         if (data.title) {
             data.title = new RegExp(data.title);
         }
@@ -90,7 +99,7 @@ server.listen(app.get('port'), function(){
         });
     });
 
-    handler.on('create', function(cmd, data) {
+    handler.on('create', function(cmd, data, user, key) {
         var project = new Project(data);
         project.save(function(error, doc) {
             if (error) {
@@ -101,14 +110,22 @@ server.listen(app.get('port'), function(){
         });
     });
 
-    handler.on('editstart', function(cmd, data) {
-        if (!editing[data._id]) {
-            editing[data._id] = true;
+    handler.on('connected', function(key) {
+        editList[key] = {};
+    });
+
+    handler.on('disconnected', function(key) {
+        delete editList[key];
+    });
+
+    handler.on('editstart', function(cmd, data, user, key) {
+        if (!editing(data._id)) {
+            editList[key][data._id] = true;
             cmd.send(data);
         }
     });
 
-    handler.on('editstop', function(cmd, data) {
+    handler.on('editstop', function(cmd, data, user, key) {
         Project.findById(data._id , function(error, doc) {
             if (error) { 
                 cmd.send(error);
@@ -119,18 +136,18 @@ server.listen(app.get('port'), function(){
                         doc[k] = data[k];
                     });
                 doc.save();
-                delete editing[doc._id];
+                delete editList[key][doc._id];
                 cmd.send(doc);
             }
         });
     });
 
-    handler.on('editcancel', function(cmd, data) {
-        delete editing[doc._id];
+    handler.on('editcancel', function(cmd, data, user, key) {
+        delete editList[key][doc._id];
         cmd.send(data);
     });
 
-    handler.on('broadcast', function(cmd, data) {
+    handler.on('broadcast', function(cmd, data, user, key) {
         cmd.send(data);
     });
 });

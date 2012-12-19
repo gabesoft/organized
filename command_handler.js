@@ -42,14 +42,14 @@ CommandHandler.prototype.initialize = function(ws) {
     this.ws      = ws;
     this.sockets = {};
 
-    // TODO: test with multiple connections and keep track of the sockets
-
     ws.on('connection', function(socket) {
         var key = Date.now() + '';
 
         self.sockets[key] = socket; // TODO: use sockets
 
         console.log('ws connected');
+
+        self.emit('connected', key);
 
         socket.on('error', function(error) {
             console.log('ws error', error);
@@ -58,11 +58,13 @@ CommandHandler.prototype.initialize = function(ws) {
 
         socket.on('message', function(message) {
             var data = JSON.parse(message.toString())
-              , cmd  = new Command(self.socketList(), data.command, data.user);
-            self.emit(cmd.name, cmd, data.data, data.user);
+              , cmd  = new Command(self.socketList(), data.command, data.user, key);
+            self.emit(cmd.name, cmd, data.data, data.user, key);
         });
 
         socket.on('close', function() {
+            self.emit('disconnected', key);
+
             delete self.sockets[key];
             console.log('ws disconnected');
         });
