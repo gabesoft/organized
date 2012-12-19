@@ -41,6 +41,7 @@ CommandHandler.prototype.initialize = function(ws) {
 
     this.ws      = ws;
     this.sockets = {};
+    this.users   = {};
 
     ws.on('connection', function(socket) {
         var key = Date.now() + '';
@@ -59,6 +60,8 @@ CommandHandler.prototype.initialize = function(ws) {
         socket.on('message', function(message) {
             var data = JSON.parse(message.toString())
               , cmd  = new Command(self.socketList(), data.command, data.user, key);
+
+            self.users[key] = data.user;
             self.emit(cmd.name, cmd, data.data, data.user, key);
         });
 
@@ -66,6 +69,7 @@ CommandHandler.prototype.initialize = function(ws) {
             self.emit('disconnected', key);
 
             delete self.sockets[key];
+            delete self.users[key];
             console.log('ws disconnected');
         });
     });

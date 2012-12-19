@@ -11,6 +11,7 @@ var express         = require('express')
   , _               = require('underscore')
   , user            = require('./routes/user')
   , server          = null
+  , async           = require('async')
   , http            = require('http')
   , path            = require('path');
 
@@ -61,20 +62,44 @@ server = http.createServer(app);
 server.listen(app.get('port'), function(){
     console.log('Express server listening on port '  + app.get('port'));
 
-    var ws            = new WebSocketServer({ server: server })
-      , handler       = new CommandHandler()
-      , projectSchema = mongoose.Schema({ title: String, description: String })
-      , Project       = mongoose.model('Project', projectSchema)
-      , db            = null
-      , editList      = {}
-      , editing       = function(id) {
-            var res = false;
+    var ws             = new WebSocketServer({ server: server })
+      , commands       = new CommandHandler()
+      , projects = require('./model/project')(mongoose)
+      //, projectSchema  = mongoose.Schema({ title: String, description: String })
+      //, resourceSchema = mongoose.Schema({ 
+            //projectId: mongoose.Schema.Types.ObjectId
+          //, clientId: String
+          //, name: String
+          //, position: String })
+      //, Project  = mongoose.model('Project', projectSchema)
+      //, Resource = mongoose.model('Resource', resourceSchema)
+      , db       = null
+      , editList = {}
+      , editedBy  = function(id) {
+            var user = null;
             Object
                .keys(editList)
                .forEach(function(k) {
-                    res = res | editList[k][id];
+                    if (editList[k][id]) {
+                        user = commands.users[k];
+                    }
                 });
-            return res;
+            return user;
+        }
+      , prepareProject = function(doc, cb) {
+            var project = doc.toObject();
+            project.editedBy = editedBy(doc._id);
+            Resource.find({ projectId: project._id }, function(err, resources) {
+                project.resources = resources;
+                cb(err, project);
+            });
+        }
+      , findProject = function(id, cb) {
+            Project.findById(id, function(err, doc) {
+                prepareProject(doc, function(err, project) {
+                    cb(err, project);
+                });
+            });
         };
 
     mongoose.connect('mongodb://localhost/organized');
@@ -88,44 +113,57 @@ server.listen(app.get('port'), function(){
         console.log('db connection open');
     });
 
-    handler.initialize(ws);
+    commands.initialize(ws);
 
-    handler.on('get', function(cmd, data, user, key) {
+    commands.on('get', function(cmd, data, user, key) {
         if (data.title) {
             data.title = new RegExp(data.title);
         }
-        Project.find(data, function(err, results) {
+        projects.find(data, function(error, results) {
+            results.forEach(function(r) {
+                r.editedBy = editedBy(r._id);
+            });
             cmd.send(results);
         });
+
+        //Project.find(data, function(err, rows) {
+            //async.map(rows, function(r, cb) {
+                //prepareProject(r, cb);
+            //}, function(err, results) {
+                //cmd.send(results);
+            //});
+        //});
     });
 
-    handler.on('create', function(cmd, data, user, key) {
+    commands.on('create', function(cmd, data, user, key) {
         var project = new Project(data);
         project.save(function(error, doc) {
-            if (error) {
-                cmd.send(error);
-            } else {
-                cmd.send(doc);
-            }
+            if (error) { return cmd.send(error); } 
+
+            prepareProject(doc, function(err, project) {
+                cmd.send(project);
+            });
         });
     });
 
-    handler.on('connected', function(key) {
+    commands.on('connected', function(key) {
         editList[key] = {};
     });
 
-    handler.on('disconnected', function(key) {
+    commands.on('disconnected', function(key) {
         delete editList[key];
     });
 
-    handler.on('editstart', function(cmd, data, user, key) {
-        if (!editing(data._id)) {
+    commands.on('editstart', function(cmd, data, user, key) {
+        if (!editedBy(data._id)) {
             editList[key][data._id] = true;
-            cmd.send(data);
+            findProject(data._id, function(err, project) {
+                cmd.send(project);
+            });
         }
     });
 
-    handler.on('editstop', function(cmd, data, user, key) {
+    commands.on('editstop', function(cmd, data, user, key) {
         Project.findById(data._id , function(error, doc) {
             if (error) { 
                 cmd.send(error);
@@ -135,43 +173,61 @@ server.listen(app.get('port'), function(){
                    .forEach(function(k) {
                         doc[k] = data[k];
                     });
+
                 doc.save();
                 delete editList[key][doc._id];
-                cmd.send(doc);
+
+                prepareProject(doc, function(err, project) {
+                    cmd.send(project);
+                });
             }
         });
     });
 
-    handler.on('editcancel', function(cmd, data, user, key) {
-        delete editList[key][doc._id];
-        cmd.send(data);
+    commands.on('editcancel', function(cmd, data, user, key) {
+        delete editList[key][data._id];
+        findProject(data._id, function(err, project) {
+            cmd.send(project);
+        });
     });
 
-    handler.on('broadcast', function(cmd, data, user, key) {
+    commands.on('addresource', function(cmd, data, user, key) {
+        var resource = new Resource({ 
+                name: user.name
+              , clientId: user.id
+              , position: 'engineer'
+              , projectId: data._id 
+            });
+
+        resource.save(function(error, doc) {
+            if (error) {
+                cmd.send(error);
+            } else {
+                findProject(data._id, function(err, project) {
+                    cmd.send(project);
+                });
+            }
+        });
+
+    });
+
+    commands.on('delresource', function(cmd, data, user, key) {
+        Resource.find({ clientId: user.id }, function(err, results) {
+            if (results) {
+                results[0].remove(function(err) {
+                    findProject(data._id, function(err, project) {
+                        cmd.send(project);
+                    });
+                });
+            } else {
+                findProject(data._id, function(err, project) {
+                    cmd.send(project);
+                });
+            }
+        });
+    });
+
+    commands.on('broadcast', function(cmd, data, user, key) {
         cmd.send(data);
     });
 });
-
-//ws.on('connection', function(socket) {
-//console.log('connection initiated');
-
-//socket.send('This is the server. You are connected', function(err) {
-//console.log('SEND', err);
-//});
-
-
-//socket.on('message', function(message) {
-//console.log('CLIENT', message);
-//socket.send('This is the server. The time here is ' + (new Date()).toString(), function(err) {
-//console.log('SEND', err);
-//});
-//});
-
-//socket.on('error', function() {
-//console.log('ERROR', arguments);
-//});
-
-//socket.on('close', function() {
-//console.log('connection closed');
-//});
-//});
