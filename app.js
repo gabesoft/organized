@@ -77,6 +77,14 @@ server.listen(app.get('port'), function(){
 
     commands.initialize(ws);
 
+    commands.on('connected', function(key) {
+        editList[key] = {};
+    });
+
+    commands.on('disconnected', function(key) {
+        delete editList[key];
+    });
+
     commands.on('get', function(cmd, data, user, key) {
         if (data.title) {
             data.title = new RegExp(data.title);
@@ -93,14 +101,6 @@ server.listen(app.get('port'), function(){
         projects.create(data, function(error, project) {
             send(cmd, project);
         });
-    });
-
-    commands.on('connected', function(key) {
-        editList[key] = {};
-    });
-
-    commands.on('disconnected', function(key) {
-        delete editList[key];
     });
 
     commands.on('editstart', function(cmd, data, user, key) {
