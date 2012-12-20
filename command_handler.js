@@ -1,5 +1,6 @@
 
 var EventEmitter = require('eventemitter2').EventEmitter2
+  , _            = require('underscore')
   , util         = require('util');
 
 function CommandHandler (options) {
@@ -44,7 +45,7 @@ CommandHandler.prototype.initialize = function(ws) {
     this.users   = {};
 
     ws.on('connection', function(socket) {
-        var key = Date.now() + '';
+        var key = _.uniqueId('K') + Date.now();
 
         self.sockets[key] = socket;
 
@@ -53,8 +54,10 @@ CommandHandler.prototype.initialize = function(ws) {
         self.emit('connected', key);
 
         socket.on('error', function(error) {
-            console.log('ws error', error);
-            self.emit('error', error);
+            self.emit('error', error, key);
+
+            delete self.sockets[key];
+            delete self.users[key];
         });
 
         socket.on('message', function(message) {

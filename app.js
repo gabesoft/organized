@@ -49,15 +49,18 @@ server.listen(app.get('port'), function(){
       , db       = null
       , editList = {}
       , editedBy = function(id) {
-            var user = null;
-            Object
-               .keys(editList)
-               .forEach(function(k) {
-                    if (editList[k][id]) {
-                        user = commands.users[k];
-                    }
-                });
-            return user;
+            var keys = Object.keys(editList)
+              , key  = null
+              , len  = keys.length
+              , i    = 0;
+
+            for (i = 0; i < len; i++) {
+                key = keys[i];
+                if (editList[key][id]) {
+                    return commands.users[key];
+                }
+            }
+            return null;
         }
       , send = function(cmd, project) {
             project.editedBy = editedBy(project._id);
@@ -77,11 +80,18 @@ server.listen(app.get('port'), function(){
 
     commands.initialize(ws);
 
+    commands.on('error', function(error, key) {
+        console.log('Connection error', error);
+        delete editList[key];
+    });
+
     commands.on('connected', function(key) {
+        console.log('Connect', key);
         editList[key] = {};
     });
 
     commands.on('disconnected', function(key) {
+        console.log('Disconnect', key, editList[key], commands.users[key]);
         delete editList[key];
     });
 
