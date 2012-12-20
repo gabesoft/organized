@@ -37,45 +37,18 @@ app.configure('development', function(){
 });
 
 app.get('/', routes.index);
-app.get('/users', user.list);
-
-app.get('/project/:id', function(req, res) {
-    var id = req.params.id;
-    res.send({ id: id, title: 'First Project', description: 'Hope this works' });
-});
-
-app.put('/project', function(req, res) {
-    var body = req.body
-      , id   = Date.now();
-    console.log(body);
-    res.send({ id: id, title: body.title, description: body.description });
-});
-
-app.post('/project', function(req, res) {
-    var body = req.body
-      , id   = Date.now();
-    res.send({ id: id, title: body.title, description: body.description });
-});
 
 server = http.createServer(app);
 
 server.listen(app.get('port'), function(){
     console.log('Express server listening on port '  + app.get('port'));
 
-    var ws             = new WebSocketServer({ server: server })
-      , commands       = new CommandHandler()
+    var ws       = new WebSocketServer({ server: server })
+      , commands = new CommandHandler()
       , projects = require('./model/project')(mongoose)
-      //, projectSchema  = mongoose.Schema({ title: String, description: String })
-      //, resourceSchema = mongoose.Schema({ 
-            //projectId: mongoose.Schema.Types.ObjectId
-          //, clientId: String
-          //, name: String
-          //, position: String })
-      //, Project  = mongoose.model('Project', projectSchema)
-      //, Resource = mongoose.model('Resource', resourceSchema)
       , db       = null
       , editList = {}
-      , editedBy  = function(id) {
+      , editedBy = function(id) {
             var user = null;
             Object
                .keys(editList)
@@ -86,20 +59,9 @@ server.listen(app.get('port'), function(){
                 });
             return user;
         }
-      , prepareProject = function(doc, cb) {
-            var project = doc.toObject();
-            project.editedBy = editedBy(doc._id);
-            Resource.find({ projectId: project._id }, function(err, resources) {
-                project.resources = resources;
-                cb(err, project);
-            });
-        }
-      , findProject = function(id, cb) {
-            Project.findById(id, function(err, doc) {
-                prepareProject(doc, function(err, project) {
-                    cb(err, project);
-                });
-            });
+      , send = function(cmd, project) {
+            project.editedBy = editedBy(project._id);
+            cmd.send(project);
         };
 
     mongoose.connect('mongodb://localhost/organized');
@@ -125,24 +87,11 @@ server.listen(app.get('port'), function(){
             });
             cmd.send(results);
         });
-
-        //Project.find(data, function(err, rows) {
-            //async.map(rows, function(r, cb) {
-                //prepareProject(r, cb);
-            //}, function(err, results) {
-                //cmd.send(results);
-            //});
-        //});
     });
 
     commands.on('create', function(cmd, data, user, key) {
-        var project = new Project(data);
-        project.save(function(error, doc) {
-            if (error) { return cmd.send(error); } 
-
-            prepareProject(doc, function(err, project) {
-                cmd.send(project);
-            });
+        projects.create(data, function(error, project) {
+            send(cmd, project);
         });
     });
 
@@ -157,73 +106,39 @@ server.listen(app.get('port'), function(){
     commands.on('editstart', function(cmd, data, user, key) {
         if (!editedBy(data._id)) {
             editList[key][data._id] = true;
-            findProject(data._id, function(err, project) {
-                cmd.send(project);
+            projects.findById(data._id, function(error, project) {
+                send(cmd, project);
             });
         }
     });
 
     commands.on('editstop', function(cmd, data, user, key) {
-        Project.findById(data._id , function(error, doc) {
-            if (error) { 
-                cmd.send(error);
-            } else {
-                Object
-                   .keys(data)
-                   .forEach(function(k) {
-                        doc[k] = data[k];
-                    });
-
-                doc.save();
-                delete editList[key][doc._id];
-
-                prepareProject(doc, function(err, project) {
-                    cmd.send(project);
-                });
-            }
+        projects.update(data, function(error, project) {
+            delete editList[key][project._id];
+            send(cmd, project);
         });
     });
 
     commands.on('editcancel', function(cmd, data, user, key) {
-        delete editList[key][data._id];
-        findProject(data._id, function(err, project) {
-            cmd.send(project);
+        projects.findById(data._id, function(error, project) {
+            delete editList[key][data._id];
+            send(cmd, project);
         });
     });
 
     commands.on('addresource', function(cmd, data, user, key) {
-        var resource = new Resource({ 
-                name: user.name
-              , clientId: user.id
-              , position: 'engineer'
-              , projectId: data._id 
-            });
-
-        resource.save(function(error, doc) {
-            if (error) {
-                cmd.send(error);
-            } else {
-                findProject(data._id, function(err, project) {
-                    cmd.send(project);
-                });
-            }
+        projects.addResource(data, { 
+            name: user.name
+          , clientId: user.id
+          , position: 'engineer'
+        }, function(error, project) {
+            send(cmd,project);
         });
-
     });
 
     commands.on('delresource', function(cmd, data, user, key) {
-        Resource.find({ clientId: user.id }, function(err, results) {
-            if (results) {
-                results[0].remove(function(err) {
-                    findProject(data._id, function(err, project) {
-                        cmd.send(project);
-                    });
-                });
-            } else {
-                findProject(data._id, function(err, project) {
-                    cmd.send(project);
-                });
-            }
+        projects.delResource(data, { clientId: user.id }, function(error, project) {
+            send(cmd, project);
         });
     });
 

@@ -1,15 +1,17 @@
-var async          = require('async')
+var Schema         = require('mongoose').Schema
+  , async          = require('async')
+  , _              = require('underscore')
   , projectFields  = { title: String, description: String }
   , resourceFields = { 
-        projectId: mongoose.Schema.Types.ObjectId
+        projectId: Schema.Types.ObjectId
       , clientId: String
       , name: String
       , position: String 
     };
 
 module.exports = function(mongoose) {
-    var projectSchema  = mongoose.Schema(projectFields)
-      , resourceSchema = mongoose.Schema(resourceFields)
+    var projectSchema  = Schema(projectFields)
+      , resourceSchema = Schema(resourceFields)
       , Project        = mongoose.model('Project', projectSchema)
       , Resource       = mongoose.model('Resource', resourceSchema);
 
@@ -56,14 +58,12 @@ module.exports = function(mongoose) {
                 });
 
             doc.save();
-            delete editList[key][doc._id];
-
             prepareProject(doc, cb);
         });
     }
 
     function addResource (data, resourceData, cb) {
-        var resource = new Resource(resourceData);
+        var resource = new Resource(_.extend({ projectId: data._id }, resourceData));
         resource.save(function(error, doc) {
             if (error) { return cb(error); }
             findById(data._id, cb);
@@ -74,14 +74,12 @@ module.exports = function(mongoose) {
         Resource.find(resourceData, function(error, resources) {
             if (error) { return cb(error); }
 
-            if (resources) {
-                resources[0].remove(function(error) {
-                    if (error) { return cb(error); }
-                    findById(data._id, cb);
-                });
-            } else {
+            async.forEach(resources || [], function(r, cb) {
+                r.remove(cb);
+            }, function(error) {
+                if (error) { return cb(error); }
                 findById(data._id, cb);
-            }
+            });
         });
     }
 
